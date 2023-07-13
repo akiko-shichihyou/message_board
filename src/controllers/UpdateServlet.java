@@ -2,8 +2,10 @@ package controllers;
 
 import java.io.IOException;
 import java.sql.Timestamp;
+import java.util.List;
 
 import javax.persistence.EntityManager;
+import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
@@ -11,6 +13,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import models.Message;
+import models.validators.MessageValidator;
 import utils.DBUtil;
 
 @WebServlet("/update")
@@ -21,12 +24,13 @@ public class UpdateServlet extends HttpServlet {
         super();
     }
 
-    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
         String _token = request.getParameter("_token");
-        if(_token != null && _token.equals(request.getSession().getId())) {
+        if (_token != null && _token.equals(request.getSession().getId())) {
             EntityManager em = DBUtil.createEntityManager();
 
-            Message m = em.find(Message.class, (Integer)(request.getSession().getAttribute("message_id")));
+            Message m = em.find(Message.class, (Integer) (request.getSession().getAttribute("message_id")));
 
             String title = request.getParameter("title");
             m.setTitle(title);
@@ -37,14 +41,29 @@ public class UpdateServlet extends HttpServlet {
             Timestamp currentTime = new Timestamp(System.currentTimeMillis());
             m.setUpdated_at(currentTime);
 
-            em.getTransaction().begin();
-            em.getTransaction().commit();
-            request.getSession().setAttribute("flush", "更新が完了しました。");
-            em.close();
+            List<String> errors = MessageValidator.validate(m);
+            if (errors.size() > 0) {
+                em.close();
 
-            request.getSession().removeAttribute("message_id");
+                // フォームに初期値を設定、さらにエラーメッセージを送る
+                request.setAttribute("_token", request.getSession().getId());
+                request.setAttribute("message", m);
+                request.setAttribute("errors", errors);
 
-            response.sendRedirect(request.getContextPath() + "/index");
+                RequestDispatcher rd = request.getRequestDispatcher("/WEB-INF/views/messages/edit.jsp");
+                rd.forward(request, response);
+            } else {
+                // データベースを更新
+                em.getTransaction().begin();
+                em.getTransaction().commit();
+                request.getSession().setAttribute("flush", "更新が完了しました。");
+                em.close();
+
+                // セッションスコープ上の不要になったデータを削除
+                request.getSession().removeAttribute("message_id");
+
+                response.sendRedirect(request.getContextPath() + "/index");
+            }
         }
     }
 }
